@@ -1,0 +1,974 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MV400 Troubleshooting Console</title>
+<style>
+  :root{
+    --bg:#161c22;
+    --panel:#1e262e;
+    --panel-2:#232d37;
+    --line:#2e3944;
+    --line-soft:#26313b;
+    --text:#dfe8ee;
+    --muted:#8296a3;
+    --muted-2:#5d6f7b;
+    --cyan:#2fb8c9;
+    --cyan-dim:#1d5c66;
+    --amber:#f2a53c;
+    --amber-dim:#5a4322;
+    --red:#e0574a;
+    --red-dim:#5a2823;
+    --green:#54b56a;
+    --green-dim:#264c30;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, "Roboto Mono", monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{
+    margin:0;
+    background:
+      radial-gradient(1200px 500px at 15% -10%, rgba(47,184,201,.08), transparent 60%),
+      var(--bg);
+    color:var(--text);
+    font-family:var(--sans);
+    -webkit-font-smoothing:antialiased;
+  }
+  ::selection{background:var(--cyan-dim); color:#fff;}
+
+  /* ===== Header ===== */
+  header{
+    position:sticky; top:0; z-index:50;
+    background:linear-gradient(180deg, #1a2129, #171e25 90%);
+    border-bottom:1px solid var(--line);
+  }
+  .hbar{
+    display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+    padding:12px 16px;
+    max-width:1400px; margin:0 auto;
+  }
+  .brand{display:flex; align-items:center; gap:12px; min-width:0; flex:1 1 auto; order:1;}
+  .brand .mark{
+    width:38px; height:38px; border-radius:8px;
+    background:linear-gradient(135deg, var(--cyan-dim), #142229);
+    border:1px solid var(--cyan-dim);
+    display:flex; align-items:center; justify-content:center;
+    font-family:var(--mono); font-weight:700; color:var(--cyan); font-size:13px;
+    flex:none;
+  }
+  .brand h1{
+    font-size:15px; margin:0; letter-spacing:.03em; font-weight:650;
+    white-space:nowrap;
+  }
+  .brand .sub{
+    font-family:var(--mono); font-size:11px; color:var(--muted-2); letter-spacing:.06em;
+  }
+  .led-strip{
+    display:flex; gap:4px; margin-left:6px; flex:none;
+  }
+  .led-strip i{
+    width:6px; height:6px; border-radius:1px; background:var(--line);
+    box-shadow:none; transition:background .25s, box-shadow .25s;
+  }
+  .led-strip i.on{ background:var(--green); box-shadow:0 0 6px 1px rgba(84,181,106,.55); }
+
+  .search-wrap{
+    flex:1 1 220px; max-width:460px; min-width:0; position:relative;
+    order:3;
+  }
+  .search-wrap input{
+    width:100%; background:var(--panel); border:1px solid var(--line);
+    color:var(--text); border-radius:7px; padding:9px 12px 9px 34px;
+    font-size:13.5px; font-family:var(--sans); outline:none;
+  }
+  .search-wrap input:focus{ border-color:var(--cyan-dim); }
+  .search-wrap svg{ position:absolute; left:10px; top:50%; transform:translateY(-50%); opacity:.55; }
+  .search-wrap input::placeholder{ color:var(--muted-2); }
+
+  .hactions{ display:flex; align-items:center; gap:10px; flex:none; order:2; margin-left:auto; }
+
+  @media (max-width:760px){
+    .hbar{ padding:10px 14px; }
+    .brand{ order:1; flex:1 1 auto; }
+    .hactions{ order:2; margin-left:0; }
+    .search-wrap{ order:3; flex-basis:100%; max-width:none; }
+    .offline-chip span:not(.dot){ display:none; }
+    .offline-chip{ padding:6px; }
+    .brand h1{ font-size:13.5px; }
+    .brand .sub{ display:none; }
+  }
+  @media (max-width:420px){
+    .led-strip{ display:none; }
+    .lang-toggle button{ padding:6px 9px; }
+  }
+  .lang-toggle{
+    display:flex; background:var(--panel); border:1px solid var(--line);
+    border-radius:7px; overflow:hidden; font-family:var(--mono); font-size:12px;
+  }
+  .lang-toggle button{
+    background:transparent; border:none; color:var(--muted); cursor:pointer;
+    padding:7px 12px; letter-spacing:.05em;
+  }
+  .lang-toggle button.active{ background:var(--cyan-dim); color:#eafcff; }
+  .offline-chip{
+    font-family:var(--mono); font-size:10.5px; color:var(--green);
+    border:1px solid var(--green-dim); background:rgba(84,181,106,.08);
+    padding:5px 9px; border-radius:20px; letter-spacing:.06em;
+    display:flex; align-items:center; gap:6px; white-space:nowrap;
+  }
+  .offline-chip .dot{width:6px; height:6px; border-radius:50%; background:var(--green); box-shadow:0 0 5px var(--green);}
+
+  /* ===== Layout ===== */
+  .shell{
+    display:grid; grid-template-columns:290px 1fr;
+    max-width:1400px; margin:0 auto;
+    min-height:calc(100vh - 60px);
+  }
+  @media (max-width:880px){ .shell{ grid-template-columns:1fr; } }
+
+  nav.tree{
+    border-right:1px solid var(--line);
+    padding:18px 12px 40px;
+    overflow-y:auto;
+  }
+  @media (max-width:880px){ nav.tree{ border-right:none; border-bottom:1px solid var(--line); } }
+
+  .group-title{
+    font-family:var(--mono); font-size:10.5px; color:var(--muted-2);
+    letter-spacing:.12em; text-transform:uppercase; padding:14px 10px 6px;
+  }
+  .code-btn{
+    width:100%; text-align:left; background:transparent; border:none;
+    color:var(--text); padding:10px 10px; border-radius:8px; cursor:pointer;
+    font-family:var(--sans); font-size:13px; display:flex; flex-direction:column; gap:3px;
+    margin-bottom:2px;
+  }
+  .code-btn:hover{ background:var(--panel-2); }
+  .code-btn.active{ background:var(--panel-2); box-shadow:inset 3px 0 0 var(--cyan); }
+  .code-btn .code{
+    font-family:var(--mono); font-size:11.5px; color:var(--amber); letter-spacing:.02em;
+    display:flex; align-items:center; gap:6px;
+  }
+  .code-btn .chev{
+    margin-left:auto; display:inline-block; color:var(--muted-2);
+    transform:rotate(90deg); transition:transform .18s ease; font-size:13px;
+  }
+  .code-btn .chev.open{ transform:rotate(270deg); color:var(--cyan); }
+  .code-btn .label{ color:var(--muted); font-size:12px; line-height:1.35; }
+  .code-btn.active .label{ color:var(--text); }
+
+  .sub-btn{
+    width:100%; text-align:left; background:transparent; border:none;
+    color:var(--muted); padding:7px 10px 7px 22px; border-radius:7px; cursor:pointer;
+    font-family:var(--sans); font-size:12.3px; display:flex; gap:8px; align-items:baseline;
+  }
+  .sub-btn:hover{ background:var(--panel-2); color:var(--text); }
+  .sub-btn.active{ background:var(--cyan-dim); color:#eafcff; }
+  .sub-btn .scode{ font-family:var(--mono); font-size:10.5px; opacity:.85; flex:none; }
+
+  /* ===== Main ===== */
+  main{ padding:26px 30px 70px; min-width:0; }
+  @media (max-width:880px){ main{ padding:20px 16px 60px; } }
+
+  .crumb{
+    font-family:var(--mono); font-size:11px; color:var(--muted-2);
+    letter-spacing:.05em; margin-bottom:10px;
+  }
+  .crumb b{ color:var(--cyan); font-weight:600; }
+
+  .title-row{
+    display:flex; align-items:flex-start; justify-content:space-between; gap:16px;
+    flex-wrap:wrap; margin-bottom:6px;
+  }
+  h2.err-title{
+    font-size:22px; margin:0; font-weight:700; letter-spacing:-.01em;
+  }
+  .badge{
+    font-family:var(--mono); font-size:11.5px; padding:5px 10px; border-radius:6px;
+    border:1px solid var(--amber-dim); color:var(--amber); background:rgba(242,165,60,.08);
+    white-space:nowrap;
+  }
+  .badge.critical{ border-color:var(--red-dim); color:var(--red); background:rgba(224,87,74,.08); }
+
+  .symptom{
+    margin:14px 0 22px; padding:13px 16px; border-radius:9px;
+    background:var(--panel); border:1px solid var(--line); border-left:3px solid var(--amber);
+    font-size:13.5px; color:var(--text); line-height:1.6;
+  }
+  .symptom .lbl{ font-family:var(--mono); font-size:10.5px; color:var(--amber); letter-spacing:.1em; display:block; margin-bottom:5px;}
+
+  .step{
+    background:var(--panel); border:1px solid var(--line); border-radius:10px;
+    padding:16px 18px; margin-bottom:12px; transition:border-color .2s;
+  }
+  .step.done{ border-color:var(--green-dim); }
+  .step-head{ display:flex; gap:12px; align-items:flex-start; cursor:pointer; }
+  .step-num{
+    font-family:var(--mono); font-size:12px; color:var(--cyan);
+    background:var(--cyan-dim); width:26px; height:26px; border-radius:6px;
+    display:flex; align-items:center; justify-content:center; flex:none;
+  }
+  .step.done .step-num{ background:var(--green-dim); color:var(--green); }
+  .step-title{ font-size:14px; font-weight:600; line-height:1.45; flex:1; padding-top:3px;}
+  .step-check{
+    flex:none; width:20px; height:20px; border-radius:5px; border:1.5px solid var(--line);
+    margin-top:5px; display:flex; align-items:center; justify-content:center;
+  }
+  .step.done .step-check{ background:var(--green); border-color:var(--green); }
+  .step-body{
+    margin-top:10px; margin-left:38px; font-size:13.2px; color:var(--muted);
+    line-height:1.65; display:none;
+  }
+  .step.open .step-body{ display:block; }
+  .step-body .ref{
+    display:inline-block; font-family:var(--mono); font-size:11px; color:var(--cyan);
+    background:rgba(47,184,201,.08); border:1px solid var(--cyan-dim); border-radius:5px;
+    padding:1px 7px; margin:2px 4px 2px 0;
+  }
+  .step-body ul{ margin:8px 0 0; padding-left:18px; }
+  .step-body li{ margin-bottom:5px; }
+
+  .loc-panel{
+    margin:20px 0 26px; padding:18px 20px 14px; border-radius:10px;
+    background:var(--panel); border:1px solid var(--line);
+  }
+  .loc-panel h3{ margin:0 0 4px; font-size:13px; letter-spacing:.02em; }
+  .loc-panel p{ margin:0 0 8px; font-size:12.5px; color:var(--muted); line-height:1.6; }
+  .loc-svg-wrap{ width:100%; overflow-x:auto; position:relative; border-radius:8px; }
+  .loc-svg-wrap svg{ display:block; width:100%; height:auto; min-width:560px; }
+  @media (max-width:640px){
+    .loc-svg-wrap::after{
+      content:""; position:absolute; top:0; right:0; bottom:0; width:26px;
+      background:linear-gradient(90deg, transparent, var(--panel) 85%);
+      pointer-events:none;
+    }
+  }
+  .loc-scroll-hint{
+    display:none; align-items:center; gap:5px; margin-top:6px;
+    font-family:var(--mono); font-size:10px; color:var(--muted-2); letter-spacing:.05em;
+  }
+  @media (max-width:640px){
+    .loc-scroll-hint{ display:flex; }
+  }
+  .loc-node-label{ font-family:var(--sans); font-size:12px; fill:var(--muted); }
+  .loc-node-label.hot{ fill:var(--amber); font-weight:600; }
+  .loc-node-sub{ font-family:var(--mono); font-size:9.5px; fill:var(--muted-2); }
+  .loc-legend{
+    display:flex; align-items:center; gap:8px; margin-top:6px;
+    font-family:var(--mono); font-size:10.5px; color:var(--muted); letter-spacing:.04em;
+  }
+  .loc-legend .swatch{
+    width:10px; height:10px; border-radius:3px; background:var(--amber);
+    box-shadow:0 0 6px 1px rgba(242,165,60,.55); flex:none;
+  }
+
+  .diag-panel{
+    margin-top:26px; padding:18px 20px; border-radius:10px;
+    background:var(--panel-2); border:1px solid var(--line);
+  }
+  .diag-panel h3{ margin:0 0 4px; font-size:13px; letter-spacing:.02em; }
+  .diag-panel p{ margin:0 0 14px; font-size:12.5px; color:var(--muted); line-height:1.6; }
+  .diag-row{ display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+  .diag-led-group{ display:flex; gap:5px; }
+  .diag-led-group i{
+    width:16px; height:22px; border-radius:2px; background:#0e1418; border:1px solid var(--line);
+  }
+  .diag-led-group i.lit{ background:var(--amber); box-shadow:0 0 8px 2px rgba(242,165,60,.6); border-color:var(--amber);}
+  .diag-btn{
+    font-family:var(--mono); font-size:11.5px; letter-spacing:.04em;
+    background:var(--cyan-dim); color:#eafcff; border:1px solid var(--cyan);
+    padding:7px 13px; border-radius:6px; cursor:pointer;
+  }
+  .diag-btn:hover{ filter:brightness(1.12); }
+  .diag-status{ font-family:var(--mono); font-size:11.5px; }
+  .diag-status.ok{ color:var(--green); }
+  .diag-status.bad{ color:var(--red); }
+
+  .footer-note{
+    margin-top:34px; padding-top:18px; border-top:1px solid var(--line-soft);
+    font-family:var(--mono); font-size:10.5px; color:var(--muted-2); letter-spacing:.03em;
+  }
+
+  .empty-state{
+    display:flex; flex-direction:column; align-items:flex-start; gap:10px;
+    padding:60px 0;
+  }
+  .empty-state h2{ font-size:20px; margin:0; }
+  .empty-state p{ color:var(--muted); font-size:13.5px; max-width:520px; line-height:1.6; margin:0;}
+
+  .no-results{ color:var(--muted-2); font-family:var(--mono); font-size:12px; padding:14px 10px; }
+
+  /* scrollbars */
+  nav.tree::-webkit-scrollbar{ width:8px; }
+  nav.tree::-webkit-scrollbar-thumb{ background:var(--line); border-radius:4px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="hbar">
+    <div class="brand">
+      <div class="mark">MV4</div>
+      <div>
+        <h1 data-i="brandTitle">MV400 Troubleshooting Console</h1>
+        <div class="sub" data-i="brandSub">HOPPER CARD DISPENSER · SERVICE REFERENCE</div>
+      </div>
+      <div class="led-strip" id="ledStrip"></div>
+    </div>
+    <div class="search-wrap">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8296a3" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input id="searchInput" type="text" data-i-ph="searchPh" placeholder="Search error code, symptom, connector (CN..)">
+    </div>
+    <div class="hactions">
+      <div class="offline-chip"><span class="dot"></span><span data-i="offline">WORKS OFFLINE</span></div>
+      <div class="lang-toggle">
+        <button id="btnEN" class="active">EN</button>
+        <button id="btnID">ID</button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="shell">
+  <nav class="tree" id="tree"></nav>
+  <main id="main"></main>
+</div>
+
+<script>
+/* =========================================================
+   MV400 Troubleshooting data — bilingual (en / id)
+   Source: SISS Technology MV400 Trouble Shooting manual
+   ========================================================= */
+const DATA = {
+  ui: {
+    en: {
+      brandTitle: "MV400 Troubleshooting Console",
+      brandSub: "HOPPER CARD DISPENSER · SERVICE REFERENCE",
+      searchPh: "Search error code, symptom, connector (CN..)",
+      offline: "WORKS OFFLINE",
+      symptomsLabel: "SYMPTOMS",
+      solutionLabel: "Solution steps",
+      relatedGroup: "Sub-errors in this code",
+      emptyTitle: "Select an error code",
+      emptyBody: "Choose an error code from the left panel, or search by symptom, error code (e.g. J100201, 0x7b) or connector reference (e.g. CN 43).",
+      footer: "SISS Technology · MV400 Hopper Card Dispenser · Offline service reference · No network or API calls required.",
+      diagTitle: "Sensor self-diagnosis",
+      diagBody: "Run C:\\Program Files\\Nextware\\exe\\NHVDM\\NHVdm.exe → Card Read/Dispense → Show Status. A blocked sensor shows red; an open sensor shows green. This panel simulates the LED behavior described in the manual.",
+      diagBtn: "Simulate: place card on sensor",
+      diagOK: "SENSOR CLEAR",
+      diagBad: "SENSOR BLOCKED",
+      groupJam: "1 · CARD JAM — J100201",
+      groupComm: "2 · COMM ERROR — J007000",
+      groupFlip: "3 · FLIP-OVER — J007700",
+      crumbHome: "MV400",
+      noResults: "No matches found.",
+      diagTitleLoc: "Where this happens",
+      diagSubLoc: "Schematic card path through the unit — not to scale. The highlighted stage is where this error occurs.",
+      diagLegend: "Problem location",
+      nodeHopper: "Hopper / Pick-up",
+      nodeSensor1: "Sensor 1",
+      nodeSensor2: "Sensor 2",
+      nodeCollection: "Collection box",
+      nodeFlipover: "Flip-Over",
+      nodePrinter: "Printer unit",
+      nodePrinterBoard: "Printer board",
+      nodeBridgeBoard: "Bridge board (sub board)",
+      dataCable: "Data cable · CN11 – CN15",
+      powerCable: "Power cable · CN22 – CN19",
+      cardFlow: "Card flow",
+      scrollHint: "Slide to see the rest →"
+    },
+    id: {
+      brandTitle: "Konsol Troubleshooting MV400",
+      brandSub: "HOPPER CARD DISPENSER · REFERENSI SERVIS",
+      searchPh: "Cari kode error, gejala, atau konektor (CN..)",
+      offline: "BISA OFFLINE",
+      symptomsLabel: "GEJALA",
+      solutionLabel: "Langkah penyelesaian",
+      relatedGroup: "Sub-error pada kode ini",
+      emptyTitle: "Pilih kode error",
+      emptyBody: "Pilih kode error dari panel kiri, atau cari berdasarkan gejala, kode error (mis. J100201, 0x7b), atau referensi konektor (mis. CN 43).",
+      footer: "SISS Technology · MV400 Hopper Card Dispenser · Referensi servis offline · Tidak memerlukan jaringan atau API apa pun.",
+      diagTitle: "Diagnosa mandiri sensor",
+      diagBody: "Jalankan C:\\Program Files\\Nextware\\exe\\NHVDM\\NHVdm.exe → Card Read/Dispense → Show Status. Sensor yang tertutup akan berwarna merah; sensor yang terbuka berwarna hijau. Panel ini mensimulasikan perilaku LED yang dijelaskan pada manual.",
+      diagBtn: "Simulasi: taruh kartu di sensor",
+      diagOK: "SENSOR BERSIH",
+      diagBad: "SENSOR TERHALANG",
+      groupJam: "1 · KARTU MACET — J100201",
+      groupComm: "2 · ERROR KOMUNIKASI — J007000",
+      groupFlip: "3 · FLIP-OVER — J007700",
+      crumbHome: "MV400",
+      noResults: "Tidak ada hasil.",
+      diagTitleLoc: "Lokasi terjadinya masalah",
+      diagSubLoc: "Skema jalur kartu di dalam unit — tidak sesuai skala. Tahap yang disorot adalah lokasi terjadinya error ini.",
+      diagLegend: "Lokasi masalah",
+      nodeHopper: "Hopper / Pengambilan",
+      nodeSensor1: "Sensor 1",
+      nodeSensor2: "Sensor 2",
+      nodeCollection: "Collection box",
+      nodeFlipover: "Flip-Over",
+      nodePrinter: "Printer unit",
+      nodePrinterBoard: "Printer board",
+      nodeBridgeBoard: "Bridge board (sub board)",
+      dataCable: "Kabel data · CN11 – CN15",
+      powerCable: "Kabel daya · CN22 – CN19",
+      cardFlow: "Arah kartu",
+      scrollHint: "Geser untuk melihat bagian lainnya →"
+    }
+  },
+
+  // Top-level groups, each containing entries. First entry of J100201 group is the
+  // "integrated" parent explanation; the rest are the ⑥ sub-device jam codes.
+  groups: [
+    {
+      id: "jam",
+      titleKey: "groupJam",
+      entries: [
+        {
+          id: "j100201",
+          code: "J100201",
+          hex: null,
+          en: { label: "Card Jam (integrated code)", symptom: "J100201 is the integrated error code for any card jam. Check the detail log to find the exact sub-error and act accordingly." },
+          id_: { label: "Kartu Macet (kode gabungan)", symptom: "J100201 adalah kode error gabungan untuk semua jenis kartu macet. Periksa log detail untuk menemukan sub-error yang tepat, lalu tindak lanjuti." },
+          diagram: { type: "path", highlight: [] },
+          steps: [
+            {
+              en: { t: "Open the error record", b: "Open C:\\Program Files\\MoniPlus2S\\ConfigRuntime\\Internal\\ErrorRecord.ini and check the error code and time. Example line: 84=CRD16-04-2018 14:15:32J100201 — this shows the error device (Card Dispenser), the date/time, and the error code." },
+              id_: { t: "Buka catatan error", b: "Buka C:\\Program Files\\MoniPlus2S\\ConfigRuntime\\Internal\\ErrorRecord.ini dan periksa kode error beserta waktunya. Contoh baris: 84=CRD16-04-2018 14:15:32J100201 — ini menunjukkan perangkat error (Card Dispenser), tanggal/waktu, dan kode error." }
+            },
+            {
+              en: { t: "Open the detail log", b: "Open D:\\Trace\\API30_YYYY-MM-DD.log and find the matching timestamp. Example: 2018-04-16 14:15:17.068: SISS_GetLastError(0x7b) - RetMsg: Sub Device_Card Jam1 (Code: 123) — this gives the exact error detail, date/time and error code (0x7b, 0x75, 0x7a, 0x7e, 0x7f, or 0x15)." },
+              id_: { t: "Buka log detail", b: "Buka D:\\Trace\\API30_YYYY-MM-DD.log dan cari stempel waktu yang sesuai. Contoh: 2018-04-16 14:15:17.068: SISS_GetLastError(0x7b) - RetMsg: Sub Device_Card Jam1 (Code: 123) — ini memberikan detail error, tanggal/waktu, dan kode error yang tepat (0x7b, 0x75, 0x7a, 0x7e, 0x7f, atau 0x15)." }
+            },
+            {
+              en: { t: "Open the matching sub-error", b: "Use the exact hex code found in the log (0x7b, 0x75, 0x7a, 0x7e, 0x7f, or 0x15) to open the corresponding sub-error entry in the sidebar and follow its steps." },
+              id_: { t: "Buka sub-error yang sesuai", b: "Gunakan kode hex yang ditemukan di log (0x7b, 0x75, 0x7a, 0x7e, 0x7f, atau 0x15) untuk membuka entri sub-error yang sesuai di panel samping, lalu ikuti langkah-langkahnya." }
+            }
+          ]
+        },
+        {
+          id: "j100201-7b",
+          code: "0x7b",
+          hex: "Sub Device_Card Jam1",
+          en: { label: "Card Jam1 (0x7b) — pick-up failure", symptom: "Fails to separate/pick up the card from the hopper." },
+          id_: { label: "Card Jam1 (0x7b) — gagal ambil kartu", symptom: "Gagal memisahkan/mengambil kartu dari hopper." },
+          diagram: { type: "path", highlight: ["hopper"] },
+          steps: [
+            { en:{ t:"Check card condition — direction & flatness", b:"Make sure the card is inserted in the correct direction. Excessive non-flat cards cause separation failure — do not tie cards with a rubber band, and keep the stack flat." },
+              id_:{ t:"Periksa kondisi kartu — arah & kerataan", b:"Pastikan kartu dimasukkan dengan arah yang benar. Kartu yang terlalu tidak rata menyebabkan kegagalan pemisahan — jangan mengikat kartu dengan karet gelang, dan jaga agar tumpukan tetap rata." } },
+            { en:{ t:"Replace the cleaning tape periodically", b:"Especially important when the tape is dusty or has weak adhesion — replace it regularly." },
+              id_:{ t:"Ganti cleaning tape secara berkala", b:"Terutama penting saat tape berdebu atau daya rekatnya lemah — ganti secara rutin." } },
+            { en:{ t:"Adjust the hopper gate with a 1.3 mm JIG", b:"Unscrew the gate fixed screw slightly so the gate can move freely front-and-back. Insert the JIG into the out-hopper, then tighten the gate fixed screw once the JIG can be pushed against the gate." },
+              id_:{ t:"Setel gate hopper dengan JIG 1.3 mm", b:"Kendurkan sedikit baut pengunci gate agar gate dapat bergerak bebas maju-mundur. Masukkan JIG ke out-hopper, lalu kencangkan baut pengunci gate setelah JIG dapat ditekan ke gate." } },
+            { en:{ t:"Check the pick-up motor condition", b:"<span class='ref'>CNF 14</span> Check for gear interference and confirm the motor turns. If the gear rubs against the frame, unscrew the mount bolt with a 1.5 mm hex wrench and re-align the gear face. Check the motor cable and replace the motor if it does not run." },
+              id_:{ t:"Periksa kondisi motor pick-up", b:"<span class='ref'>CNF 14</span> Periksa apakah ada gesekan pada gear dan pastikan motor berputar. Jika gear bergesekan dengan frame, kendurkan baut dudukan dengan kunci L 1.5 mm dan sejajarkan ulang permukaan gear. Periksa kabel motor dan ganti motor jika tidak berfungsi." } }
+          ]
+        },
+        {
+          id: "j100201-75",
+          code: "0x75",
+          hex: "Sub Device_Card Jam2",
+          en: { label: "Card Jam2 (0x75) — jam at 1st sensor", symptom: "The card is stuck at the first sensor." },
+          id_: { label: "Card Jam2 (0x75) — macet di sensor 1", symptom: "Kartu tersangkut pada sensor pertama." },
+          diagram: { type: "path", highlight: ["sensor1"] },
+          steps: [
+            { en:{ t:"Run sensor self-diagnosis if no card is present", b:"<span class='ref'>CNF 5</span> Run C:\\Program Files\\Nextware\\exe\\NHVDM\\NHVdm.exe → Card Read/Dispense → Show Status. Covering the sensor with a card turns it yellow/red on screen; an open sensor shows green. If the sensor shows red/blocked with no card physically present, replace the sensor or its cable.", diag:true },
+              id_:{ t:"Jalankan diagnosa mandiri sensor bila tidak ada kartu", b:"<span class='ref'>CNF 5</span> Jalankan C:\\Program Files\\Nextware\\exe\\NHVDM\\NHVdm.exe → Card Read/Dispense → Show Status. Menutup sensor dengan kartu akan mengubah tampilannya menjadi kuning/merah; sensor yang terbuka berwarna hijau. Jika sensor menunjukkan merah/terhalang padahal tidak ada kartu secara fisik, ganti sensor atau kabelnya.", diag:true } },
+            { en:{ t:"If a card is physically stuck: check the down feed motor", b:"<span class='ref'>CNF 13</span> Replace the motor if it is not working." },
+              id_:{ t:"Jika kartu benar-benar tersangkut: periksa down feed motor", b:"<span class='ref'>CNF 13</span> Ganti motor jika tidak berfungsi." } },
+            { en:{ t:"Check for and remove any foreign object", b:"Inspect the path for debris causing the jam and remove the cause." },
+              id_:{ t:"Periksa dan singkirkan benda asing", b:"Periksa jalur kartu dari kotoran/benda yang menyebabkan macet, lalu singkirkan penyebabnya." } },
+            { en:{ t:"Check the roller tension O-ring", b:"Replace the O-ring between the rollers if it is damaged." },
+              id_:{ t:"Periksa O-ring tension roller", b:"Ganti O-ring di antara roller jika rusak." } }
+          ]
+        },
+        {
+          id: "j100201-7a",
+          code: "0x7a",
+          hex: "Sub Device_Card Jam3",
+          en: { label: "Card Jam3 (0x7a) — jam at 2nd sensor", symptom: "The card is stuck at the second sensor." },
+          id_: { label: "Card Jam3 (0x7a) — macet di sensor 2", symptom: "Kartu tersangkut pada sensor kedua." },
+          diagram: { type: "path", highlight: ["sensor2","flipover"] },
+          steps: [
+            { en:{ t:"Run sensor self-diagnosis if no card is present", b:"<span class='ref'>CNF 6</span> Same procedure as Card Jam2: run NHVdm.exe → Card Read/Dispense → Show Status. Replace the sensor/cable if it reads red with no card present.", diag:true },
+              id_:{ t:"Jalankan diagnosa mandiri sensor bila tidak ada kartu", b:"<span class='ref'>CNF 6</span> Prosedur sama seperti Card Jam2: jalankan NHVdm.exe → Card Read/Dispense → Show Status. Ganti sensor/kabel jika terbaca merah padahal tidak ada kartu.", diag:true } },
+            { en:{ t:"If a card is physically stuck: check the down feed motor", b:"<span class='ref'>CNF 13</span> Replace the motor if not working." },
+              id_:{ t:"Jika kartu benar-benar tersangkut: periksa down feed motor", b:"<span class='ref'>CNF 13</span> Ganti motor jika tidak berfungsi." } },
+            { en:{ t:"Check for and remove any foreign object" },
+              id_:{ t:"Periksa dan singkirkan benda asing" } },
+            { en:{ t:"Check the roller tension O-ring", b:"Replace it if damaged." },
+              id_:{ t:"Periksa O-ring tension roller", b:"Ganti jika rusak." } },
+            { en:{ t:"Check the Flip-Over stops in the correct position", b:"The black input guide should sit at 12 o'clock to receive the card from the hopper, and the sensor disk should sit in the middle hole of its 3-hole pattern. If misaligned, re-assemble the sensor disk (next step)." },
+              id_:{ t:"Periksa posisi berhenti Flip-Over sudah benar", b:"Panduan masuk (guide) hitam harus berada di posisi jam 12 untuk menerima kartu dari hopper, dan disk sensor harus berada di lubang tengah dari pola 3 lubangnya. Jika tidak sejajar, pasang ulang disk sensor (langkah berikutnya)." } },
+            { en:{ t:"Re-assemble the Flip-Over sensor disk correctly", b:"Position the 12 o'clock guide, insert 2 toothed washers, assemble the sensor disk, then insert and fix an additional toothed washer. Confirm the disk position is also correct when the card moves from the flip-over into the printer unit." },
+              id_:{ t:"Pasang ulang disk sensor Flip-Over dengan benar", b:"Posisikan guide di jam 12, pasang 2 washer bergerigi, pasang disk sensor, lalu pasang dan kencangkan washer bergerigi tambahan. Pastikan posisi disk juga benar saat kartu berpindah dari flip-over ke printer unit." } }
+          ]
+        },
+        {
+          id: "j100201-7e",
+          code: "0x7e",
+          hex: "Sub Device_Card Jam4",
+          en: { label: "Card Jam4 (0x7e) — jam flip-over↔printer", symptom: "The card is stuck between the flip-over rotator and the printer unit." },
+          id_: { label: "Card Jam4 (0x7e) — macet flip-over↔printer", symptom: "Kartu tersangkut di antara rotator flip-over dan printer unit." },
+          diagram: { type: "path", highlight: ["flipover","printer"] },
+          steps: [
+            { en:{ t:"Check the sensor", b:"<span class='ref'>CN 39</span> Follow the sensor self-diagnosis procedure (see Card Jam2). Replace the sensor if faulty.", diag:true },
+              id_:{ t:"Periksa sensor", b:"<span class='ref'>CN 39</span> Ikuti prosedur diagnosa mandiri sensor (lihat Card Jam2). Ganti sensor jika bermasalah.", diag:true } },
+            { en:{ t:"Check the feed motor on the printer unit", b:"<span class='ref'>CN 31</span> If the printer unit rollers do not turn while the card moves from the flip-over into the printer, check the cable connection, roller-belt connection, and pulley fixing. Replace the feed motor if faulty." },
+              id_:{ t:"Periksa feed motor pada printer unit", b:"<span class='ref'>CN 31</span> Jika roller printer unit tidak berputar saat kartu berpindah dari flip-over ke printer, periksa koneksi kabel, sambungan belt roller, dan pengencangan pulley. Ganti feed motor jika bermasalah." } },
+            { en:{ t:"Check for any obstruction along the card path", b:"Remove the cause of the interruption." },
+              id_:{ t:"Periksa hambatan di sepanjang jalur kartu", b:"Singkirkan penyebab hambatan tersebut." } }
+          ]
+        },
+        {
+          id: "j100201-7f",
+          code: "0x7f",
+          hex: "Sub Device_Card Jam5",
+          en: { label: "Card Jam5 (0x7f) — jam at collection box", symptom: "The card is stuck at the collection box sensor." },
+          id_: { label: "Card Jam5 (0x7f) — macet di collection box", symptom: "Kartu tersangkut pada sensor collection box." },
+          diagram: { type: "path", highlight: ["collection"] },
+          steps: [
+            { en:{ t:"Check the sensor", b:"<span class='ref'>CN 40</span> Follow the sensor self-diagnosis procedure (see Card Jam2). Replace the sensor if faulty.", diag:true },
+              id_:{ t:"Periksa sensor", b:"<span class='ref'>CN 40</span> Ikuti prosedur diagnosa mandiri sensor (lihat Card Jam2). Ganti sensor jika bermasalah.", diag:true } },
+            { en:{ t:"Empty the collection box", b:"Remove the cards if too many have accumulated and stacked in the collection box." },
+              id_:{ t:"Kosongkan collection box", b:"Keluarkan kartu jika terlalu banyak menumpuk di collection box." } }
+          ]
+        },
+        {
+          id: "j100201-15",
+          code: "0x15",
+          hex: "Card Jam",
+          en: { label: "Card Jam (0x15) — jam at printer unit", symptom: "The card is stuck inside the printer unit." },
+          id_: { label: "Card Jam (0x15) — macet di printer unit", symptom: "Kartu tersangkut di dalam printer unit." },
+          diagram: { type: "path", highlight: ["printer"] },
+          steps: [
+            { en:{ t:"Check the sensors", b:"<span class='ref'>CN 26 · CN 27 · CN 28 · CN 29</span> Follow the sensor self-diagnosis procedure (see Card Jam2). Replace whichever sensor is faulty.", diag:true },
+              id_:{ t:"Periksa sensor-sensor", b:"<span class='ref'>CN 26 · CN 27 · CN 28 · CN 29</span> Ikuti prosedur diagnosa mandiri sensor (lihat Card Jam2). Ganti sensor yang bermasalah.", diag:true } },
+            { en:{ t:"Remove any foreign object", b:"Check for anything obstructing the card as it moves and remove the cause." },
+              id_:{ t:"Singkirkan benda asing", b:"Periksa apa pun yang menghalangi pergerakan kartu dan singkirkan penyebabnya." } },
+            { en:{ t:"Check the roller O-rings", b:"Replace any O-ring between rollers that is damaged." },
+              id_:{ t:"Periksa O-ring roller", b:"Ganti O-ring di antara roller yang rusak." } }
+          ]
+        }
+      ]
+    },
+
+    {
+      id: "comm",
+      titleKey: "groupComm",
+      entries: [
+        {
+          id: "j007000",
+          code: "J007000",
+          hex: "0x70",
+          en: { label: "Comm. error — printer ⇄ bridge board", symptom: "Communication error between the printer board and the hopper feed board (bridge/sub board)." },
+          id_: { label: "Error komunikasi — printer ⇄ bridge board", symptom: "Error komunikasi antara printer board dan hopper feed board (bridge/sub board)." },
+          diagram: { type: "board" },
+          steps: [
+            { en:{ t:"Check cable status", b:"Data cable: Printer <span class='ref'>CN 11</span> — Bridge <span class='ref'>CN 15</span>. Power cable: Printer <span class='ref'>CN 22</span> — Bridge <span class='ref'>CN 19</span>. Verify both cables and their connections are seated properly." },
+              id_:{ t:"Periksa status kabel", b:"Kabel data: Printer <span class='ref'>CN 11</span> — Bridge <span class='ref'>CN 15</span>. Kabel daya: Printer <span class='ref'>CN 22</span> — Bridge <span class='ref'>CN 19</span>. Pastikan kedua kabel dan konektornya terpasang dengan benar." } },
+            { en:{ t:"Replace the bridge board", b:"If the board is not working or keeps resetting, replace it." },
+              id_:{ t:"Ganti bridge board", b:"Jika board tidak berfungsi atau terus-menerus reset, ganti board tersebut." } },
+            { en:{ t:"Replace the printer board", b:"1) Separate the LCD board from the front of the printer.<br>2) Unscrew the 4 screws fixing it into the printer unit.<br>3) Disconnect all cables from the main board.<br>4) Unscrew the 6 screws fixing the main board.<br>5) Unscrew the 6 support columns.<br>6) Reassemble in reverse order with the new board." },
+              id_:{ t:"Ganti printer board", b:"1) Lepaskan LCD board dari bagian depan printer.<br>2) Lepas 4 sekrup yang mengikatnya ke printer unit.<br>3) Lepaskan semua kabel dari main board.<br>4) Lepas 6 sekrup pengikat main board.<br>5) Lepas 6 kolom penyangga.<br>6) Pasang kembali dengan urutan terbalik menggunakan board baru." } }
+          ]
+        }
+      ]
+    },
+
+    {
+      id: "flip",
+      titleKey: "groupFlip",
+      entries: [
+        {
+          id: "j007700",
+          code: "J007700",
+          hex: "0x77",
+          en: { label: "Flip-Over fault / wrong stop position", symptom: "The Flip-Over is not working, or does not stop at the correct position." },
+          id_: { label: "Flip-Over rusak / posisi berhenti salah", symptom: "Flip-Over tidak berfungsi, atau tidak berhenti pada posisi yang benar." },
+          diagram: { type: "path", highlight: ["flipover"] },
+          steps: [
+            { en:{ t:"Motor not working", b:"Check the cable status and replace the motor if needed." },
+              id_:{ t:"Motor tidak berfungsi", b:"Periksa status kabel dan ganti motor jika diperlukan." } },
+            { en:{ t:"Excessive noise", b:"Check the motor cable. <span class='ref'>CN 2</span>" },
+              id_:{ t:"Suara berisik berlebihan", b:"Periksa kabel motor. <span class='ref'>CN 2</span>" } },
+            { en:{ t:"Check the Flip-Over disk sensor", b:"<span class='ref'>CN 43</span> On the bridge board, watch LED <span class='ref'>S2</span>. Normally: S2 turns OFF when the sensor is aligned with a disk hole, and ON when it is blocked (no hole). If this is reversed, the sensor is defective — replace it.", diag:true },
+              id_:{ t:"Periksa sensor disk Flip-Over", b:"<span class='ref'>CN 43</span> Pada bridge board, amati LED <span class='ref'>S2</span>. Normalnya: S2 mati (OFF) saat sensor sejajar dengan lubang disk, dan menyala (ON) saat terhalang (tidak ada lubang). Jika terbalik, sensor rusak — ganti sensor tersebut.", diag:true } },
+            { en:{ t:"Check the clutch bearing assembly", b:"Shake the flip-over body side to side — it should not wobble. If it moves left/right, push the clutch bearing further in to stop the play, and add a washer inside the bearing so it can't move." },
+              id_:{ t:"Periksa pemasangan clutch bearing", b:"Goyangkan badan flip-over ke kiri-kanan — seharusnya tidak goyang. Jika bergerak ke kiri/kanan, dorong clutch bearing lebih dalam untuk menghilangkan kelonggaran, dan tambahkan washer di dalam bearing agar tidak bergerak." } },
+            { en:{ t:"Clutch bearing cover — reassembly steps", b:"1) Remove the bearing cover.<br>2) Push the clutch bearing fully into the flip-over.<br>3) Insert a few washers into the bearing cover.<br>4) Insert the clutch bearing assembly and reattach the bridge board." },
+              id_:{ t:"Tutup clutch bearing — langkah pemasangan ulang", b:"1) Lepas tutup bearing.<br>2) Dorong clutch bearing sepenuhnya ke dalam flip-over.<br>3) Masukkan beberapa washer ke dalam tutup bearing.<br>4) Pasang rakitan clutch bearing dan pasang kembali bridge board." } },
+            { en:{ t:"Replace the bridge board", b:"If it is not working or keeps resetting, replace it." },
+              id_:{ t:"Ganti bridge board", b:"Jika tidak berfungsi atau terus-menerus reset, ganti board tersebut." } }
+          ]
+        }
+      ]
+    }
+  ]
+};
+
+/* ============================= App state ============================= */
+let lang = "en";
+let activeEntry = null;
+const openSteps = new Set();
+const doneSteps = new Set();
+const expandedGroups = new Set();
+
+function t(key){ return DATA.ui[lang][key] || key; }
+function entryText(entry){ return lang === "en" ? entry.en : entry.id_; }
+function stepText(step){ return lang === "en" ? step.en : step.id_; }
+
+function allEntries(){
+  return DATA.groups.flatMap(g => g.entries.map(e => ({...e, groupId:g.id, groupTitleKey:g.titleKey})));
+}
+
+/* ============================= Rendering ============================= */
+function renderStatic(){
+  document.querySelectorAll("[data-i]").forEach(el=>{
+    el.textContent = t(el.getAttribute("data-i"));
+  });
+  document.querySelectorAll("[data-i-ph]").forEach(el=>{
+    el.setAttribute("placeholder", t(el.getAttribute("data-i-ph")));
+  });
+  document.documentElement.lang = lang;
+}
+
+function renderLedStrip(){
+  const strip = document.getElementById("ledStrip");
+  strip.innerHTML = "";
+  const pattern = [1,0,1,1,0,0];
+  pattern.forEach((on,i)=>{
+    const led = document.createElement("i");
+    if(on) led.classList.add("on");
+    strip.appendChild(led);
+  });
+}
+
+function renderTree(filter){
+  const tree = document.getElementById("tree");
+  tree.innerHTML = "";
+  const f = (filter||"").trim().toLowerCase();
+  let anyMatch = false;
+
+  DATA.groups.forEach(group=>{
+    const matchedEntries = group.entries.filter(entry=>{
+      if(!f) return true;
+      const et = entryText(entry);
+      const hay = [entry.code, entry.hex, et.label, et.symptom].join(" ").toLowerCase();
+      const stepHay = entry.steps.map(s=>{
+        const st = stepText(s);
+        return (st.t||"") + " " + (st.b||"");
+      }).join(" ").toLowerCase();
+      return (hay + " " + stepHay).includes(f);
+    });
+    if(f && matchedEntries.length === 0) return;
+    anyMatch = true;
+
+    const gt = document.createElement("div");
+    gt.className = "group-title";
+    gt.textContent = t(group.titleKey);
+    tree.appendChild(gt);
+
+    matchedEntries.forEach((entry, idx)=>{
+      const et = entryText(entry);
+      const hasSubs = group.entries.length > 1;
+      const isParent = idx === 0 && hasSubs;
+      const isSub = hasSubs && !isParent;
+      const isExpanded = !!f || expandedGroups.has(group.id);
+
+      if(isSub && !isExpanded) return; // hidden until parent is opened
+
+      const btn = document.createElement("button");
+      btn.className = isSub ? "sub-btn" : "code-btn";
+      if(activeEntry && activeEntry.id === entry.id) btn.classList.add("active");
+
+      if(isSub){
+        btn.innerHTML = `<span class="scode">${entry.code}</span><span>${et.label.replace(/^.*?—\s*/,'')}</span>`;
+      } else {
+        const chev = hasSubs ? `<span class="chev ${isExpanded ? "open":""}">›</span>` : "";
+        btn.innerHTML = `<span class="code">${entry.code}${entry.hex ? " · "+entry.hex : ""}${chev}</span><span class="label">${et.label}</span>`;
+      }
+      btn.addEventListener("click", ()=> selectEntry(entry));
+      tree.appendChild(btn);
+    });
+  });
+
+  if(f && !anyMatch){
+    const div = document.createElement("div");
+    div.className = "no-results";
+    div.textContent = t("noResults");
+    tree.appendChild(div);
+  }
+}
+
+function selectEntry(entry){
+  const group = findGroupFor(entry);
+  const isParent = group && group.entries.length > 1 && group.entries[0].id === entry.id;
+  if(group){
+    if(isParent){
+      // clicking the parent toggles its sub-error menu open/closed
+      if(expandedGroups.has(group.id)) expandedGroups.delete(group.id);
+      else expandedGroups.add(group.id);
+    } else {
+      // picking a sub-error (e.g. via search) keeps its menu open
+      expandedGroups.add(group.id);
+    }
+  }
+  activeEntry = entry;
+  openSteps.clear();
+  renderTree(document.getElementById("searchInput").value);
+  renderMain();
+
+  // On narrow screens the tree sits above the content, so bring the
+  // detail panel (symptoms + solution steps) into view automatically.
+  if(window.innerWidth <= 880){
+    requestAnimationFrame(()=>{
+      document.getElementById("main").scrollIntoView({ behavior:"smooth", block:"start" });
+    });
+  }
+}
+
+function toggleStep(idx){
+  const key = activeEntry.id + "-" + idx;
+  if(openSteps.has(key)) openSteps.delete(key); else openSteps.add(key);
+  renderMain();
+}
+
+function toggleDone(idx, ev){
+  ev.stopPropagation();
+  const key = activeEntry.id + "-" + idx;
+  if(doneSteps.has(key)) doneSteps.delete(key); else doneSteps.add(key);
+  renderMain();
+}
+
+function findGroupFor(entry){
+  return DATA.groups.find(g => g.entries.some(e=>e.id===entry.id));
+}
+
+/* ============================= Position diagrams ============================= */
+const PATH_NODES = [
+  { id:"hopper",     x:70,  labelKey:"nodeHopper" },
+  { id:"sensor1",    x:220, labelKey:"nodeSensor1" },
+  { id:"sensor2",    x:370, labelKey:"nodeSensor2" },
+  { id:"flipover",   x:530, labelKey:"nodeFlipover" },
+  { id:"printer",    x:690, labelKey:"nodePrinter" }
+];
+const COLLECTION_NODE = { id:"collection", x:370, y:190, labelKey:"nodeCollection" };
+
+function nodeBox(x, y, w, h, label, sub, hot){
+  const rx = 10;
+  const fill = hot ? "rgba(242,165,60,.14)" : "var(--panel-2)";
+  const stroke = hot ? "var(--amber)" : "var(--line)";
+  const glow = hot ? `filter="drop-shadow(0 0 6px rgba(242,165,60,.55))"` : "";
+  let s = `<g ${glow}>`;
+  s += `<rect x="${x-w/2}" y="${y-h/2}" width="${w}" height="${h}" rx="${rx}" fill="${fill}" stroke="${stroke}" stroke-width="${hot?2:1.3}"/>`;
+  if(hot){
+    s += `<circle cx="${x+w/2-10}" cy="${y-h/2+10}" r="4" fill="var(--amber)"><animate attributeName="opacity" values="1;.25;1" dur="1.4s" repeatCount="indefinite"/></circle>`;
+  }
+  const labelClass = hot ? "loc-node-label hot" : "loc-node-label";
+  s += `<text x="${x}" y="${y+h/2+18}" text-anchor="middle" class="${labelClass}">${label}</text>`;
+  if(sub) s += `<text x="${x}" y="${y+h/2+31}" text-anchor="middle" class="loc-node-sub">${sub}</text>`;
+  s += `</g>`;
+  return s;
+}
+
+function renderPathSvg(highlight){
+  const y = 80, w = 108, h = 46;
+  let s = `<svg viewBox="0 0 800 250" xmlns="http://www.w3.org/2000/svg">`;
+
+  // main flow line + arrowheads
+  s += `<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="var(--muted-2)"/></marker></defs>`;
+  for(let i=0;i<PATH_NODES.length-1;i++){
+    const a = PATH_NODES[i], b = PATH_NODES[i+1];
+    s += `<line x1="${a.x+w/2}" y1="${y}" x2="${b.x-w/2-6}" y2="${y}" stroke="var(--muted-2)" stroke-width="1.5" marker-end="url(#arrow)"/>`;
+  }
+  // branch to collection box (from between sensor2 and flipover)
+  s += `<line x1="${COLLECTION_NODE.x}" y1="${y+h/2}" x2="${COLLECTION_NODE.x}" y2="${COLLECTION_NODE.y-h/2-6}" stroke="var(--muted-2)" stroke-width="1.5" stroke-dasharray="3,3" marker-end="url(#arrow)"/>`;
+
+  s += `<text x="14" y="20" class="loc-node-sub" style="letter-spacing:.1em;">${t("cardFlow")} →</text>`;
+
+  PATH_NODES.forEach(n=>{
+    const hot = highlight.includes(n.id);
+    s += nodeBox(n.x, y, w, h, t(n.labelKey), null, hot);
+  });
+  const cHot = highlight.includes("collection");
+  s += nodeBox(COLLECTION_NODE.x, COLLECTION_NODE.y, w, h, t(COLLECTION_NODE.labelKey), null, cHot);
+
+  s += `</svg>`;
+  return s;
+}
+
+function renderBoardSvg(){
+  let s = `<svg viewBox="0 0 800 200" xmlns="http://www.w3.org/2000/svg">`;
+  s += `<defs><marker id="arrow2" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="var(--amber)"/></marker></defs>`;
+  const y1 = 70, y2 = 130, w = 190, h = 50;
+  const xL = 200, xR = 560;
+  s += `<line x1="${xL+w/2}" y1="${y1}" x2="${xR-w/2}" y2="${y1}" stroke="var(--amber)" stroke-width="2" marker-end="url(#arrow2)" marker-start="url(#arrow2)"/>`;
+  s += `<text x="${(xL+xR)/2}" y="${y1-10}" text-anchor="middle" class="loc-node-sub">${t("dataCable")}</text>`;
+  s += `<line x1="${xL+w/2}" y1="${y2}" x2="${xR-w/2}" y2="${y2}" stroke="var(--muted-2)" stroke-width="1.5" marker-end="url(#arrow2)" marker-start="url(#arrow2)"/>`;
+  s += `<text x="${(xL+xR)/2}" y="${y2+22}" text-anchor="middle" class="loc-node-sub">${t("powerCable")}</text>`;
+  s += nodeBox(xL, (y1+y2)/2, w, h, t("nodePrinterBoard"), null, true);
+  s += nodeBox(xR, (y1+y2)/2, w, h, t("nodeBridgeBoard"), null, true);
+  s += `</svg>`;
+  return s;
+}
+
+function renderLocPanel(diagram){
+  const div = document.createElement("div");
+  div.className = "loc-panel";
+  const svg = diagram.type === "board" ? renderBoardSvg() : renderPathSvg(diagram.highlight || []);
+  div.innerHTML = `
+    <h3>${t("diagTitleLoc")}</h3>
+    <p>${t("diagSubLoc")}</p>
+    <div class="loc-svg-wrap">${svg}</div>
+    <div class="loc-scroll-hint">${t("scrollHint")}</div>
+    <div class="loc-legend"><span class="swatch"></span>${t("diagLegend")}</div>
+  `;
+  return div;
+}
+
+function renderDiagPanel(){
+  const div = document.createElement("div");
+  div.className = "diag-panel";
+  div.innerHTML = `
+    <h3>${t("diagTitle")}</h3>
+    <p>${t("diagBody")}</p>
+    <div class="diag-row">
+      <div class="diag-led-group" id="diagLeds"></div>
+      <button class="diag-btn" id="diagBtn">${t("diagBtn")}</button>
+      <span class="diag-status ok" id="diagStatus">${t("diagOK")}</span>
+    </div>
+  `;
+  setTimeout(()=>{
+    const ledGroup = div.querySelector("#diagLeds");
+    for(let i=0;i<6;i++){
+      const l = document.createElement("i");
+      ledGroup.appendChild(l);
+    }
+    const btn = div.querySelector("#diagBtn");
+    const status = div.querySelector("#diagStatus");
+    let blocked = false;
+    btn.addEventListener("click", ()=>{
+      blocked = !blocked;
+      const leds = ledGroup.querySelectorAll("i");
+      leds.forEach((l,i)=>{
+        l.classList.toggle("lit", blocked && (i===2 || i===3));
+      });
+      status.textContent = blocked ? t("diagBad") : t("diagOK");
+      status.classList.toggle("ok", !blocked);
+      status.classList.toggle("bad", blocked);
+    });
+  },0);
+  return div;
+}
+
+function renderMain(){
+  const main = document.getElementById("main");
+  main.innerHTML = "";
+
+  if(!activeEntry){
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.innerHTML = `
+      <h2>${t("emptyTitle")}</h2>
+      <p>${t("emptyBody")}</p>
+    `;
+    main.appendChild(empty);
+    return;
+  }
+
+  const entry = activeEntry;
+  const et = entryText(entry);
+  const group = findGroupFor(entry);
+
+  const crumb = document.createElement("div");
+  crumb.className = "crumb";
+  crumb.innerHTML = `${t("crumbHome")} / ${t(group.titleKey)} / <b>${entry.code}</b>`;
+  main.appendChild(crumb);
+
+  const titleRow = document.createElement("div");
+  titleRow.className = "title-row";
+  const isCritical = entry.code === "J100201" || entry.hex === "Card Jam";
+  titleRow.innerHTML = `
+    <h2 class="err-title">${et.label}</h2>
+    <span class="badge ${isCritical ? "critical":""}">${entry.hex ? entry.hex : entry.code}</span>
+  `;
+  main.appendChild(titleRow);
+
+  const symptom = document.createElement("div");
+  symptom.className = "symptom";
+  symptom.innerHTML = `<span class="lbl">${t("symptomsLabel")}</span>${et.symptom}`;
+  main.appendChild(symptom);
+
+  if(entry.diagram){
+    main.appendChild(renderLocPanel(entry.diagram));
+  }
+
+  const solLabel = document.createElement("div");
+  solLabel.className = "group-title";
+  solLabel.style.padding = "0 0 8px";
+  solLabel.textContent = t("solutionLabel");
+  main.appendChild(solLabel);
+
+  let showDiag = false;
+
+  entry.steps.forEach((step, idx)=>{
+    const st = stepText(step);
+    if(st.diag) showDiag = true;
+    const key = entry.id + "-" + idx;
+    const isOpen = openSteps.has(key);
+    const isDone = doneSteps.has(key);
+
+    const div = document.createElement("div");
+    div.className = "step" + (isOpen ? " open":"") + (isDone ? " done":"");
+
+    div.innerHTML = `
+      <div class="step-head">
+        <div class="step-num">${idx+1}</div>
+        <div class="step-title">${st.t}</div>
+        <div class="step-check" data-idx="${idx}">${isDone ? "✓":""}</div>
+      </div>
+      ${st.b ? `<div class="step-body">${st.b}</div>` : ""}
+    `;
+    div.querySelector(".step-head").addEventListener("click",(ev)=>{
+      if(ev.target.closest(".step-check")) return;
+      toggleStep(idx);
+    });
+    const chk = div.querySelector(".step-check");
+    chk.addEventListener("click",(ev)=> toggleDone(idx, ev));
+    main.appendChild(div);
+  });
+
+  if(showDiag){
+    main.appendChild(renderDiagPanel());
+  }
+
+  const footer = document.createElement("div");
+  footer.className = "footer-note";
+  footer.textContent = t("footer");
+  main.appendChild(footer);
+}
+
+/* ============================= Wiring ============================= */
+function setLang(l){
+  lang = l;
+  document.getElementById("btnEN").classList.toggle("active", l==="en");
+  document.getElementById("btnID").classList.toggle("active", l==="id");
+  renderStatic();
+  renderTree(document.getElementById("searchInput").value);
+  renderMain();
+}
+
+document.getElementById("btnEN").addEventListener("click", ()=> setLang("en"));
+document.getElementById("btnID").addEventListener("click", ()=> setLang("id"));
+document.getElementById("searchInput").addEventListener("input", (e)=> renderTree(e.target.value));
+
+renderStatic();
+renderLedStrip();
+renderTree("");
+renderMain();
+</script>
+</body>
+</html>
